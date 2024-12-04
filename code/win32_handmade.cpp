@@ -1,4 +1,5 @@
 #include <cstdint>
+#include <dsound.h>
 #include <windows.h>
 #include <xinput.h>
 
@@ -48,10 +49,16 @@ typedef X_INPUT_SET_STATE(x_input_set_state);
 X_INPUT_SET_STATE(XInputSetStateStub) { return ERROR_DEVICE_NOT_CONNECTED; }
 global_variable x_input_set_state *DyXInputSetState = XInputSetStateStub;
 
+#define DIRECT_SOUND_CREATE(name)                                              \
+  HRESULT WINAPI name(LPCGUID pcGuidDevice, LPDIRECTSOUND *ppDS,               \
+                      LPUNKNOWN pUnkOuter)
+typedef DIRECT_SOUND_CREATE(direct_sound_create);
+
 internal void Win32LoadXInput(void) {
   // TODO: Test this on windows 8
   HMODULE XInputLibrary = LoadLibraryA("xinput1_4.dll");
   if (!XInputLibrary) {
+    // TODO: Diagnostic
     XInputLibrary = LoadLibraryA("xinput1_3.dll");
   }
 
@@ -60,7 +67,78 @@ internal void Win32LoadXInput(void) {
         (x_input_get_state *)GetProcAddress(XInputLibrary, "XInputGetState");
     DyXInputSetState =
         (x_input_set_state *)GetProcAddress(XInputLibrary, "XInputSetState");
+  } else {
+    // TODO: Diagnostic
   }
+}
+
+internal void Win32InitDSound(HWND Window, int32 SamplesPerSecond,
+                              int32 BufferSize) {
+  // NOTE: Load the library
+  HMODULE DSoundLibrary = LoadLibraryA("dsound.dll");
+
+  if (DSoundLibrary) {
+    // NOTE: Get a DirectSound object
+    direct_sound_create *DirectSoundCreate =
+        (direct_sound_create *)GetProcAddress(DSoundLibrary,
+                                              "DirectSoundCreate");
+
+    // TODO: Double check that this works on XP - Directsound 8 or 7?
+    LPDIRECTSOUND DirectSound;
+    if (DirectSoundCreate && SUCCEEDED(DirectSoundCreate(0, &DirectSound, 0))) {
+      WAVEFORMATEX WaveFormat = {};
+      WaveFormat.wFormatTag = WAVE_FORMAT_PCM;
+      WaveFormat.nChannels = 2;
+      WaveFormat.nSamplesPerSec = SamplesPerSecond;
+      WaveFormat.nBlockAlign =
+          (WaveFormat.nChannels * WaveFormat.wBitsPerSample) / 8;
+      WaveFormat.nAvgBytesPerSec =
+          WaveFormat.nSamplesPerSec * WaveFormat.nBlockAlign;
+      WaveFormat.wBitsPerSample = 16;
+      WaveFormat.cbSize = 0;
+
+      if (SUCCEEDED(DirectSound->SetCooperativeLevel(Window, DSSCL_PRIORITY))) {
+        DSBUFFERDESC BufferDescription = {};
+        BufferDescription.dwSize = sizeof(BufferDescription);
+        BufferDescription.dwFlags = DSBCAPS_PRIMARYBUFFER;
+
+        // NOTE: Create a primary buffer
+        // TODO: DSBCAPS_GLOBALFOCUS?
+        LPDIRECTSOUNDBUFFER PrimaryBuffer;
+        if (SUCCEEDED(DirectSound->CreateSoundBuffer(&BufferDescription,
+                                                     &PrimaryBuffer, 0))) {
+
+          HRESULT Error = PrimaryBuffer->SetFormat(&WaveFormat);
+          if (SUCCEEDED(Error)) {
+            // NOTE: We have set the format!
+            OutputDebugStringA("Primary buffer format was set!");
+          } else {
+            // TODO: Diagnostic
+          }
+        }
+      } else {
+        // TODO: Diagnostic
+      }
+
+      DSBUFFERDESC BufferDescription = {};
+      BufferDescription.dwSize = sizeof(BufferDescription);
+      BufferDescription.dwFlags = 0;
+      BufferDescription.dwBufferBytes = BufferSize;
+      BufferDescription.lpwfxFormat = &WaveFormat;
+      LPDIRECTSOUNDBUFFER SecondaryBuffer;
+      HRESULT Error = DirectSound->CreateSoundBuffer(&BufferDescription,
+                                                     &SecondaryBuffer, 0);
+      if (SUCCEEDED(Error)) {
+        OutputDebugStringA("Secondary buffer created successfully!");
+      }
+    } else {
+      // TODO: Diagnostic
+    }
+  }
+
+  // NOTE: Create a secondary buffer
+
+  // NOTE: Start it playing
 }
 
 internal win32_window_dimension GetWindowDimension(HWND Window) {
@@ -244,6 +322,9 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance,
       GlobalRunning = true;
       int XOffset = 0;
       int YOffset = 0;
+
+      Win32InitDSound(Window, 48000, 48000 * sizeof(int16) * 2);
+
       while (GlobalRunning) {
         MSG Message;
         while (PeekMessage(&Message, 0, 0, 0, PM_REMOVE)) {
