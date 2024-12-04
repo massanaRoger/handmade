@@ -10,6 +10,7 @@ typedef int8_t int8;
 typedef int16_t int16;
 typedef int32_t int32;
 typedef int64_t int64;
+typedef int32_t bool32;
 
 typedef uint8_t uint8;
 typedef uint16_t uint16;
@@ -25,7 +26,7 @@ struct win32_offscreen_buffer {
 };
 
 // TODO: This is a global for now
-global_variable bool GlobalRunning;
+global_variable bool32 GlobalRunning;
 global_variable win32_offscreen_buffer GlobalBackBuffer;
 
 struct win32_window_dimension {
@@ -37,18 +38,23 @@ struct win32_window_dimension {
 #define X_INPUT_GET_STATE(name)                                                \
   DWORD WINAPI name(DWORD dwUserIndex, XINPUT_STATE *pState)
 typedef X_INPUT_GET_STATE(x_input_get_state);
-X_INPUT_GET_STATE(XInputGetStateStub) { return 0; }
+X_INPUT_GET_STATE(XInputGetStateStub) { return ERROR_DEVICE_NOT_CONNECTED; }
 global_variable x_input_get_state *DyXInputGetState = XInputGetStateStub;
 
 // NOTE: XInputSetState
 #define X_INPUT_SET_STATE(name)                                                \
   DWORD WINAPI name(DWORD dwUserIndex, XINPUT_VIBRATION *pVibration)
 typedef X_INPUT_SET_STATE(x_input_set_state);
-X_INPUT_SET_STATE(XInputSetStateStub) { return 0; }
+X_INPUT_SET_STATE(XInputSetStateStub) { return ERROR_DEVICE_NOT_CONNECTED; }
 global_variable x_input_set_state *DyXInputSetState = XInputSetStateStub;
 
 internal void Win32LoadXInput(void) {
+  // TODO: Test this on windows 8
   HMODULE XInputLibrary = LoadLibraryA("xinput1_4.dll");
+  if (!XInputLibrary) {
+    XInputLibrary = LoadLibraryA("xinput1_3.dll");
+  }
+
   if (XInputLibrary) {
     DyXInputGetState =
         (x_input_get_state *)GetProcAddress(XInputLibrary, "XInputGetState");
@@ -142,8 +148,8 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND Window, UINT Message,
   case WM_KEYDOWN:
   case WM_KEYUP: {
     uint32 VKCode = WParam;
-    bool WasDown = (LParam & (1 << 30)) != 0;
-    bool IsDown = (LParam & (1 << 31)) == 0;
+    bool32 WasDown = (LParam & (1 << 30)) != 0;
+    bool32 IsDown = (LParam & (1 << 31)) == 0;
 
     if (WasDown != IsDown) {
       if (VKCode == 'W') {
@@ -177,6 +183,11 @@ LRESULT CALLBACK Win32MainWindowCallback(HWND Window, UINT Message,
       } else if (VKCode == VK_SPACE) {
         OutputDebugStringA("SPACE");
       }
+    }
+
+    bool32 AltKeyWasDown = (LParam & (1 << 29)) != 0;
+    if ((VKCode == VK_F4) && AltKeyWasDown) {
+      GlobalRunning = false;
     }
   } break;
   case WM_CLOSE: {
@@ -254,19 +265,20 @@ int CALLBACK WinMain(HINSTANCE Instance, HINSTANCE PrevInstance,
             // are not polling controller inputs rapidly enough
             XINPUT_GAMEPAD *Pad = &ControllerState.Gamepad;
 
-            bool Up = (Pad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
-            bool Down = (Pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
-            bool Left = (Pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
-            bool Right = (Pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
-            bool Start = (Pad->wButtons & XINPUT_GAMEPAD_START);
-            bool Back = (Pad->wButtons & XINPUT_GAMEPAD_BACK);
-            bool LeftShoulder = (Pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
-            bool RightShoulder =
+            bool32 Up = (Pad->wButtons & XINPUT_GAMEPAD_DPAD_UP);
+            bool32 Down = (Pad->wButtons & XINPUT_GAMEPAD_DPAD_DOWN);
+            bool32 Left = (Pad->wButtons & XINPUT_GAMEPAD_DPAD_LEFT);
+            bool32 Right = (Pad->wButtons & XINPUT_GAMEPAD_DPAD_RIGHT);
+            bool32 Start = (Pad->wButtons & XINPUT_GAMEPAD_START);
+            bool32 Back = (Pad->wButtons & XINPUT_GAMEPAD_BACK);
+            bool32 LeftShoulder =
+                (Pad->wButtons & XINPUT_GAMEPAD_LEFT_SHOULDER);
+            bool32 RightShoulder =
                 (Pad->wButtons & XINPUT_GAMEPAD_RIGHT_SHOULDER);
-            bool AButton = (Pad->wButtons & XINPUT_GAMEPAD_A);
-            bool BButton = (Pad->wButtons & XINPUT_GAMEPAD_B);
-            bool XButton = (Pad->wButtons & XINPUT_GAMEPAD_X);
-            bool YButton = (Pad->wButtons & XINPUT_GAMEPAD_Y);
+            bool32 AButton = (Pad->wButtons & XINPUT_GAMEPAD_A);
+            bool32 BButton = (Pad->wButtons & XINPUT_GAMEPAD_B);
+            bool32 XButton = (Pad->wButtons & XINPUT_GAMEPAD_X);
+            bool32 YButton = (Pad->wButtons & XINPUT_GAMEPAD_Y);
 
             int16 StickX = Pad->sThumbLX;
             int16 StickY = Pad->sThumbLY;
